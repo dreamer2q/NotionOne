@@ -2,6 +2,10 @@ import { siteConfig } from '@/lib/config'
 import Head from 'next/head'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+const NEXT_IMAGE_WIDTHS = [
+  16, 32, 48, 64, 96, 128, 256, 384, 640, 750, 828, 1080, 1200, 1920, 2048, 3840
+]
+
 const getTargetImageWidth = (width, maxWidth) => {
   const parsedWidth = Number(width)
   const parsedMaxWidth = Number(maxWidth)
@@ -13,6 +17,39 @@ const getTargetImageWidth = (width, maxWidth) => {
   }
 
   return maxWidth
+}
+
+const snapNextImageWidth = width => {
+  const n = Number(width)
+  const target = Number.isFinite(n) && n > 0 ? n : 256
+  return NEXT_IMAGE_WIDTHS.reduce((best, cur) =>
+    Math.abs(cur - target) < Math.abs(best - target) ? cur : best
+  )
+}
+
+const isNotionHostedImage = src =>
+  typeof src === 'string' &&
+  (src.includes('notion.so/image') ||
+    src.includes('notion.site/image') ||
+    src.includes('img.notionusercontent.com'))
+
+/**
+ * Notion 图床在浏览器里常因防盗链/跨境访问失败。Vercel 上改为走同源 `_next/image`。
+ * 静态导出没有图片优化接口，保持原地址。
+ */
+const toDisplaySrc = (src, width) => {
+  const adjusted = adjustImgSize(src, width)
+  if (!adjusted) {
+    return adjusted
+  }
+  if (process.env.EXPORT || adjusted.startsWith('/_next/image')) {
+    return adjusted
+  }
+  if (!isNotionHostedImage(adjusted)) {
+    return adjusted
+  }
+  const w = snapNextImageWidth(width)
+  return `/_next/image?url=${encodeURIComponent(adjusted)}&w=${w}&q=75`
 }
 
 /**
@@ -42,7 +79,7 @@ export default function LazyImage({
   const imageRef = useRef(null)
   const [currentSrc, setCurrentSrc] = useState(
     priority && src
-      ? adjustImgSize(src, targetImageWidth)
+      ? toDisplaySrc(src, targetImageWidth)
       : placeholderSrc || defaultPlaceholderSrc
   )
   const [imageLoaded, setImageLoaded] = useState(Boolean(priority && src))
@@ -73,7 +110,7 @@ export default function LazyImage({
 
   useEffect(() => {
     const adjustedImageSrc =
-      adjustImgSize(src, targetImageWidth) || defaultPlaceholderSrc
+      toDisplaySrc(src, targetImageWidth) || defaultPlaceholderSrc
     const imageElement = imageRef.current
     const handleImageLoaded = () => {
       if (typeof onLoad === 'function') {
@@ -175,6 +212,7 @@ export default function LazyImage({
     // 性能优化属性
     loading: priority ? 'eager' : loading || 'lazy',
     decoding: 'async',
+    referrerPolicy: 'no-referrer',
     // 现代图片格式支持
     ...(siteConfig('WEBP_SUPPORT') && { 'data-webp': true }),
     ...(siteConfig('AVIF_SUPPORT') && { 'data-avif': true })
@@ -200,7 +238,7 @@ export default function LazyImage({
           <link
             rel='preload'
             as='image'
-            href={adjustImgSize(src, targetImageWidth)}
+            href={toDisplaySrc(src, targetImageWidth)}
             fetchpriority='high'
           />
         </Head>

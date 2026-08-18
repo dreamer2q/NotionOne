@@ -145,4 +145,19 @@ describe('LazyImage Component', () => {
     const image = screen.getByAltText('Test image')
     expect(image).toHaveStyle('border: 1px solid red')
   })
+
+  it('proxies Notion avatar URLs through the site image optimizer', () => {
+    const notionSrc =
+      'https://www.notion.so/image/https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Ffoo.jpg?table=collection&id=1&width=24&cache=v2'
+    render(
+      <LazyImage src={notionSrc} alt='Avatar' width={24} height={24} priority />
+    )
+
+    const image = screen.getByAltText('Avatar')
+    const src = image.getAttribute('src')
+    expect(src.startsWith('/_next/image?')).toBe(true)
+    expect(src).toContain('url=')
+    expect(decodeURIComponent(src)).toContain('www.notion.so/image')
+    expect(image).toHaveAttribute('referrerpolicy', 'no-referrer')
+  })
 })
